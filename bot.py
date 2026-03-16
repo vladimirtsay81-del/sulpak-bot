@@ -1,5 +1,4 @@
-import asyncio
-asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 import logging
 import sqlite3
 from datetime import datetime
