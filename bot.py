@@ -1,14 +1,19 @@
-
+import asyncio
+import sys
 import logging
 import sqlite3
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ConversationHandler, ContextTypes, filters
-
+ 
+# ✅ ИСПРАВЛЕНО: WindowsSelectorEventLoopPolicy только для Windows
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+ 
 BOT_TOKEN = "8681803459:AAFrSqH05SZLw8ldG5-9pA3Uq3g0TW4en9E"
 VENDOR_CHAT_ID = 547710147
 MANAGER_IDS = [547710147]
-
+ 
 STORE_CODES = {
     "SLK-22091-8WIK": "22091",
     "SLK-22101-M2UA": "22101",
@@ -185,18 +190,18 @@ STORE_CODES = {
     "SLK-22Z01-2OO5": "22Z01",
     "SLK-22Z03-P2LH": "22Z03"
 }
-
+ 
 BRAND_ZONES = ["Samsung","LG","Apple","Huawei","Delongi","Braun","Arg","Tefal","Hansa","Oppo","Beko","Другой бренд"]
 AUTH, SELECT_BRAND, DESCRIBE_PROBLEM, SEND_PHOTO, SET_PRIORITY, CONFIRM = range(6)
-
+ 
 def init_db():
     conn = sqlite3.connect("sulpak.db")
     c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, store_name TEXT, role TEXT DEFAULT \'store\', authorized INTEGER DEFAULT 0)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS requests (id INTEGER PRIMARY KEY AUTOINCREMENT, store_name TEXT, brand_zone TEXT, description TEXT, photo_id TEXT, priority TEXT, status TEXT DEFAULT \'новая\', created_at TEXT, updated_at TEXT, user_id INTEGER)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, store_name TEXT, role TEXT DEFAULT 'store', authorized INTEGER DEFAULT 0)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS requests (id INTEGER PRIMARY KEY AUTOINCREMENT, store_name TEXT, brand_zone TEXT, description TEXT, photo_id TEXT, priority TEXT, status TEXT DEFAULT 'новая', created_at TEXT, updated_at TEXT, user_id INTEGER)''')
     conn.commit()
     conn.close()
-
+ 
 def get_user(uid):
     conn = sqlite3.connect("sulpak.db")
     c = conn.cursor()
@@ -204,14 +209,14 @@ def get_user(uid):
     u = c.fetchone()
     conn.close()
     return u
-
+ 
 def save_user(uid, store, role="store"):
     conn = sqlite3.connect("sulpak.db")
     c = conn.cursor()
     c.execute("INSERT OR REPLACE INTO users VALUES (?,?,?,1)", (uid, store, role))
     conn.commit()
     conn.close()
-
+ 
 def save_request(store, brand, desc, photo, priority, uid):
     conn = sqlite3.connect("sulpak.db")
     c = conn.cursor()
@@ -221,7 +226,7 @@ def save_request(store, brand, desc, photo, priority, uid):
     conn.commit()
     conn.close()
     return rid
-
+ 
 def update_status(rid, status):
     conn = sqlite3.connect("sulpak.db")
     c = conn.cursor()
@@ -229,7 +234,7 @@ def update_status(rid, status):
     c.execute("UPDATE requests SET status=?,updated_at=? WHERE id=?", (status,now,rid))
     conn.commit()
     conn.close()
-
+ 
 def get_all_requests():
     conn = sqlite3.connect("sulpak.db")
     c = conn.cursor()
@@ -237,7 +242,7 @@ def get_all_requests():
     r = c.fetchall()
     conn.close()
     return r
-
+ 
 def get_store_requests(store):
     conn = sqlite3.connect("sulpak.db")
     c = conn.cursor()
@@ -245,7 +250,7 @@ def get_store_requests(store):
     r = c.fetchall()
     conn.close()
     return r
-
+ 
 def get_req(rid):
     conn = sqlite3.connect("sulpak.db")
     c = conn.cursor()
@@ -253,22 +258,22 @@ def get_req(rid):
     r = c.fetchone()
     conn.close()
     return r
-
+ 
 def main_menu():
     return ReplyKeyboardMarkup([[KeyboardButton("📋 Подать заявку")],[KeyboardButton("📊 Мои заявки"),KeyboardButton("ℹ️ Помощь")]],resize_keyboard=True)
-
+ 
 def brands_kb():
     return ReplyKeyboardMarkup([[KeyboardButton(x)] for x in BRAND_ZONES]+[[KeyboardButton("❌ Отмена")]],resize_keyboard=True,one_time_keyboard=True)
-
+ 
 def priority_kb():
     return ReplyKeyboardMarkup([[KeyboardButton("🔴 Срочно"),KeyboardButton("🟡 Средне")],[KeyboardButton("🟢 Не срочно"),KeyboardButton("❌ Отмена")]],resize_keyboard=True,one_time_keyboard=True)
-
+ 
 def confirm_kb():
     return InlineKeyboardMarkup([[InlineKeyboardButton("✅ Отправить",callback_data="confirm_yes"),InlineKeyboardButton("❌ Отменить",callback_data="confirm_no")]])
-
+ 
 def vendor_kb(rid):
     return InlineKeyboardMarkup([[InlineKeyboardButton("✅ Принять в работу",callback_data=f"v_accept_{rid}")],[InlineKeyboardButton("🔧 Выполнено",callback_data=f"v_done_{rid}")],[InlineKeyboardButton("❌ Отклонить",callback_data=f"v_reject_{rid}")]])
-
+ 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     user = get_user(uid)
@@ -281,7 +286,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
     await update.message.reply_text("👋 Добро пожаловать в систему заявок *Сулпак*!\n\n🔐 Введите код вашего магазина:",parse_mode="Markdown")
     return AUTH
-
+ 
 async def auth(update: Update, context: ContextTypes.DEFAULT_TYPE):
     code = update.message.text.strip().upper()
     if code in STORE_CODES:
@@ -291,7 +296,7 @@ async def auth(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
     await update.message.reply_text("❌ Неверный код магазина. Попробуйте снова:\n\n(Код выглядит так: SLK-22091-XXXX)")
     return AUTH
-
+ 
 async def new_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     user = get_user(uid)
@@ -301,7 +306,7 @@ async def new_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["store"]=user[1]
     await update.message.reply_text(f"📋 *Новая заявка*\n🏪 Магазин: *{user[1]}*\n\nВыберите бренд-зону:",parse_mode="Markdown",reply_markup=brands_kb())
     return SELECT_BRAND
-
+ 
 async def select_brand(update: Update, context: ContextTypes.DEFAULT_TYPE):
     t = update.message.text
     if t=="❌ Отмена":
@@ -313,7 +318,7 @@ async def select_brand(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["brand"]=t
     await update.message.reply_text(f"🏷 Бренд: *{t}*\n\n📝 Опишите проблему:",parse_mode="Markdown",reply_markup=ReplyKeyboardMarkup([["❌ Отмена"]],resize_keyboard=True))
     return DESCRIBE_PROBLEM
-
+ 
 async def describe_problem(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.text=="❌ Отмена":
         await update.message.reply_text("Отменено.",reply_markup=main_menu())
@@ -321,7 +326,7 @@ async def describe_problem(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["description"]=update.message.text
     await update.message.reply_text("📸 Отправьте фото повреждения:",reply_markup=ReplyKeyboardMarkup([["❌ Отмена"]],resize_keyboard=True))
     return SEND_PHOTO
-
+ 
 async def receive_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.text and update.message.text=="❌ Отмена":
         await update.message.reply_text("Отменено.",reply_markup=main_menu())
@@ -332,7 +337,7 @@ async def receive_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["photo_id"]=update.message.photo[-1].file_id
     await update.message.reply_text("⚡ Выберите приоритет:",reply_markup=priority_kb())
     return SET_PRIORITY
-
+ 
 async def set_priority(update: Update, context: ContextTypes.DEFAULT_TYPE):
     t = update.message.text
     if t=="❌ Отмена":
@@ -345,7 +350,7 @@ async def set_priority(update: Update, context: ContextTypes.DEFAULT_TYPE):
     d=context.user_data
     await update.message.reply_photo(photo=d["photo_id"],caption=f"📋 *Проверьте заявку:*\n\n🏪 Магазин: {d['store']}\n🏷 Бренд: {d['brand']}\n📝 Проблема: {d['description']}\n⚡ Приоритет: {d['priority']}\n\nВсё верно?",parse_mode="Markdown",reply_markup=confirm_kb())
     return CONFIRM
-
+ 
 async def confirm_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -364,7 +369,7 @@ async def confirm_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_caption(f"✅ *Заявка #{rid} отправлена!*",parse_mode="Markdown")
     await context.bot.send_message(uid,"Главное меню:",reply_markup=main_menu())
     return ConversationHandler.END
-
+ 
 async def my_requests(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid=update.effective_user.id
     user=get_user(uid)
@@ -380,7 +385,7 @@ async def my_requests(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for r in rows:
         text+=f"{em.get(r[6],'❓')} *#{r[0]}* | 🏷 {r[2]} | {r[5]}\n   📝 {r[3][:50]}\n   📅 {r[7]}\n\n"
     await update.message.reply_text(text,parse_mode="Markdown")
-
+ 
 async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in MANAGER_IDS:
         await update.message.reply_text("⛔ Нет доступа.")
@@ -394,7 +399,7 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for r in rows[:20]:
         text+=f"{em.get(r[6],'❓')} *#{r[0]}* | Магазин {r[1]}\n   🏷 {r[2]} | {r[5]} | 📅 {r[7]}\n\n"
     await update.message.reply_text(text,parse_mode="Markdown")
-
+ 
 async def vendor_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query=update.callback_query
     await query.answer()
@@ -422,28 +427,41 @@ async def vendor_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await context.bot.send_message(chat_id=mid,text=f"📌 Заявка *#{rid}* | Магазин {req[1]}\nСтатус: {ns}",parse_mode="Markdown")
             except Exception as e:
                 logging.error(e)
-
+ 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("ℹ️ *Помощь*\n\n📋 Подать заявку\n📊 Мои заявки\n/start — перезапуск\n/report — отчёт (менеджер)",parse_mode="Markdown",reply_markup=main_menu())
-
+ 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Отменено.",reply_markup=main_menu())
     return ConversationHandler.END
-
+ 
 def main():
     logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s",level=logging.INFO)
     init_db()
-    app=Application.builder().token(BOT_TOKEN).build()
-    auth_conv=ConversationHandler(entry_points=[CommandHandler("start",start)],states={AUTH:[MessageHandler(filters.TEXT & ~filters.COMMAND,auth)]},fallbacks=[CommandHandler("cancel",cancel)])
-    request_conv=ConversationHandler(entry_points=[MessageHandler(filters.Regex("^📋 Подать заявку$"),new_request)],states={SELECT_BRAND:[MessageHandler(filters.TEXT & ~filters.COMMAND,select_brand)],DESCRIBE_PROBLEM:[MessageHandler(filters.TEXT & ~filters.COMMAND,describe_problem)],SEND_PHOTO:[MessageHandler(filters.PHOTO,receive_photo),MessageHandler(filters.TEXT & ~filters.COMMAND,receive_photo)],SET_PRIORITY:[MessageHandler(filters.TEXT & ~filters.COMMAND,set_priority)],CONFIRM:[CallbackQueryHandler(confirm_request,pattern="^confirm_")]},fallbacks=[CommandHandler("cancel",cancel)])
+    app = Application.builder().token(BOT_TOKEN).build()
+ 
+    auth_conv = ConversationHandler(
+        entry_points=[CommandHandler("start", start)],
+        states={AUTH: [MessageHandler(filters.TEXT & ~filters.COMMAND, auth)]},
+        fallbacks=[CommandHandler("cancel", cancel)]
+    )
+    request_conv = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex("^📋 Подать заявку$"), new_request)],
+        states={
+            SELECT_BRAND: [MessageHandler(filters.TEXT & ~filters.COMMAND, select_brand)],
+            DESCRIBE_PROBLEM: [MessageHandler(filters.TEXT & ~filters.COMMAND, describe_problem)],
+            SEND_PHOTO: [MessageHandler(filters.PHOTO, receive_photo), MessageHandler(filters.TEXT & ~filters.COMMAND, receive_photo)],
+            SET_PRIORITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_priority)],
+            CONFIRM: [CallbackQueryHandler(confirm_request, pattern="^confirm_")]
+        },
+        fallbacks=[CommandHandler("cancel", cancel)]
+    )
+ 
     app.add_handler(auth_conv)
     app.add_handler(request_conv)
-    app.add_handler(CommandHandler("report",report))
-    app.add_handler(MessageHandler(filters.Regex("^📊 Мои заявки$"),my_requests))
-    app.add_handler(MessageHandler(filters.Regex("^ℹ️ Помощь$"),help_cmd))
-    app.add_handler(CallbackQueryHandler(vendor_callback,pattern="^v_"))
+    app.add_handler(CommandHandler("report", report))
+    app.add_handler(MessageHandler(filters.Regex("^📊 Мои заявки$"), my_requests))
+    app.add_handler(MessageHandler(filters.Regex("^ℹ️ Помощь$"), help_cmd))
+    app.add_handler(CallbackQueryHandler(vendor_callback, pattern="^v_"))
+ 
     print("🤖 Бот Сулпак запущен!")
-    app.run_polling()
-
-if __name__=="__main__":
-    main()
